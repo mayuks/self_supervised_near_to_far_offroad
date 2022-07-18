@@ -1,4 +1,4 @@
-A set of ROS/Gazebo packages that together simulate, in closed-loop, autonomous terrain data acquisition for training a semantic segmentation network towards terrain-adaptive autonomous off-road driving. See the demonstration video.
+A set of ROS/Gazebo packages that together simulate, in closed-loop, autonomous terrain data acquisition for training a semantic segmentation network towards terrain-adaptive autonomous off-road driving. See the demonstration video and https://youtu.be/aOfmmZdM8kI.
 
 REF: 
 
