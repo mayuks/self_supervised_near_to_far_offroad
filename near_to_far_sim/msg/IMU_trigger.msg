@@ -1,0 +1,2 @@
+string start_stop
+int8 cluster_number

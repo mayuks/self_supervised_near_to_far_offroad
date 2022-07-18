@@ -1,0 +1,11 @@
+
+<launch>
+
+    <include file="$(find robot_description)/launch/my_test.launch">
+    </include>
+
+    <node pkg="near_to_far_sim" name="dbscan_and_contours" type="dbscan_and_contours.py" output="screen"/>
+    <node pkg="near_to_far_sim" name="contours_and_paths"  type="contours_and_paths.py" output="screen" />
+    <node pkg="near_to_far_sim" name="record_IMU_data"  type="record_IMU_data.py" output="screen" />
+    <node pkg="near_to_far_sim" name="find_path_and_follow"  type="find_path_and_follow.py" output="screen" />
+</launch>
