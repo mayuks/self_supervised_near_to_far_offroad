@@ -32,11 +32,6 @@ class Find_Path_and_Follow(object):
         self.robot_start_x = 0
         self.robot_start_y = 0
         self.yaw = 0
-
-        # self.robot_start_x = 0.0909148466563
-        # self.robot_start_y = 3.52076744824
-        # self.yaw = 0.00483364637745
-
         self.scale = 1             #xx...resizing factor...if pix was resized to world size/xx
 
         # **** Initialize variables from handlers ****
@@ -80,20 +75,17 @@ class Find_Path_and_Follow(object):
         else:
             print('Select proper controller')
 
-
         self.T = rospy.get_param('~rate', 0.1)
         self.timer = rospy.Timer(rospy.Duration(self.T), self.timer_callback)
 
         # Topics that controller is subscribing to
         rospy.Subscriber('label_no_and_IMU', Num, self.callback, queue_size=1)
         rospy.Subscriber('odometry/filtered', Odometry, self.handle_estimate, queue_size=1)      # To get estimate pose and velocity of vehicle
-        # rospy.Subscriber('husky_b1/odometry/filtered_odom', Odometry, self.handle_estimate, queue_size=1)
         rospy.Subscriber('cluster_acclns', Num, self.get_vib_data, queue_size=1)           #subscribe to IMU vib data from record_IMU_data.py
         self.sub_joy = rospy.Subscriber('husky_b1/joy', Joy, self.handle_joy, queue_size=1)  # To joystick informat
 
         # Topics to that controller is publishing to
         self.pub_driveable = rospy.Publisher('driveable', Int8, queue_size=1, latch=True)           #latch? Number of driveable-sized cluters
-        # self.pub_paths = rospy.Publisher('paths_list', Num, queue_size=1, latch=True)           #latch?
         self.pub_path_points_followed = rospy.Publisher('path_points_followed', Int16, queue_size=1, latch=True)  # latch?
         self.pub_estop = rospy.Publisher('husky_b1/e_stop', Bool, queue_size=1)                      # Publish to estop topic to put husky in soft estop mode
         self.pub_twist = rospy.Publisher('husky_velocity_controller/cmd_vel', Twist, queue_size=100)                  # Publish to command velocities (v, omega) to the vel controller
@@ -103,8 +95,6 @@ class Find_Path_and_Follow(object):
         self.pub_errx = rospy.Publisher('errxx', Num, queue_size=1, latch=True)
         self.pub_erry = rospy.Publisher('erryy', Num, queue_size=1, latch=True)
         self.pub_planned_paths_2 = rospy.Publisher('planned_paths_2', Num, queue_size=1, latch=True)
-
-
 
     def callback(self, data):
         self.im = copy.deepcopy(data.labelled)
@@ -140,18 +130,10 @@ class Find_Path_and_Follow(object):
         if self.est_pose is None:             # is None
             rospy.logwarn_throttle(2.5, "... waiting for pose...")
             return
-
-        # if self.wait_hold is not None:                  #testing stuff, see note before controller loop
-        #     rospy.logwarn_throttle(2.5, "Wait to print..")
-        #     return
-
-        # im = cv2.imread('/home/offroad/PycharmProjects/my_slic.py/ld.png', 0)          #gray
         im = copy.deepcopy(self.im)
         im = np.asarray(im)
         im = im.astype(np.uint8)
-        # print(im)
         im  = np.reshape(im, (np.int(45.2*7/self.scale), np.int(45.2*7/self.scale)))  # gray
-        # im = np.reshape(im, (112, 135))  # gray, if above (225,270) scaled down by 2
 
 ######################################################################################################################
 
@@ -161,13 +143,6 @@ class Find_Path_and_Follow(object):
 
         # Next pass start and end for each section to Astar and concatenate...
         # i.e Astar[0], coors_for_IMU[0], Astar[], coords_for_IMU[1]... etc
-
-        # Current_Robot_Position = [312,120]                  # parameterise wrt image size
-        # Final_Position = [0,120]                            # parameterise...
-
-        # Current_Robot_Position = [im.shape[0]-1, np.int(0.5*(im.shape[1]-1)+1)]                  # parameterise wrt image size, doesn't have to be 0.5, depends on the position of ROI wrt robot
-        # Current_Robot_Position = [im.shape[0]-1, np.int(0.48 *(im.shape[1]-1)+1)]
-        # Final_Position = [0, np.int(0.48*(im.shape[1]-1)+1)]
 
         Current_Robot_Position = [im.shape[0]-1, np.int(0.39 *(im.shape[1]-1)+1)]
         Final_Position = [0, np.int(0.39*(im.shape[1]-1)+1)]
@@ -213,9 +188,6 @@ class Find_Path_and_Follow(object):
             GScore[MAP == label_no_and_vib[i][0]] = np.int(label_no_and_vib[i][1])        # TO DO: evaluate GSCORE costs based on IMU metric
         Test = GScore==np.inf
         GScore[Test] = np.amax(GScore)      #make noisy classes equal the min cost
-
-        # np.savetxt("gscore.csv", GScore, delimiter=",")
-
 
         ### Setting up matrices representing neighbours to be investigated
 
@@ -354,9 +326,7 @@ class Find_Path_and_Follow(object):
 
         OptimalPaths.append(OptimalPath[::-1])          #flipped to give arrays as start to end
 
-        # image1 = cv2.imread('/home/offroad/Desktop/get-perspective-transform-example/transformed_resized.png')               #colour image
-        image1 = cv2.imread('/home/offroad/figs/transformed_resized_in_use.tiff')
-        # image1 = cv2.imread('/home/offroad/figs/7.722622.png')
+        image1 = cv2.imread('/home/offroad/figs/transformed_resized_in_use.tiff')       #use a ROS msg :: CVbridge
         print(image1.shape)
 
 
@@ -365,19 +335,9 @@ class Find_Path_and_Follow(object):
             for i in range(0, len(Paths)):
                 if i == len(Paths) - 1:
                     continue
-                # cv2.line(image1, (Paths[i][1], Paths[i][0]), (Paths[i + 1][1], Paths[i + 1][0]),
-                #          (0, 0, 255), 2)
                 cv2.line(image1, (Paths[i][1], Paths[i][0]), (Paths[i + 1][1], Paths[i + 1][0]),        #just testing a different color
                          (0, 255, ), 2)
-                # cv2.imshow("outline", image1)
-                # cv2.waitKey(10)
-        # print('stop')
-        # cv2.imshow("outline", image1)
-        # cv2.waitKey(10000)
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
 
-        # cv2.imwrite("image_traversal_paths_no_costs.png",image1)
         filename = '/home/misan/figs/' + str(time.clock())+'.tiff'
         cv2.imwrite(filename, image1)
 
@@ -387,12 +347,7 @@ class Find_Path_and_Follow(object):
 
         paths_to_follow = [self.add_heading(x) for x in image_to_global]
 
-        # print(len(paths_to_follow))
-        # print(paths_to_follow[-2][0])
-
-
         # Now add initial path from vehice to start of image
-
         loc = self.est_pose
         self.robot_pose = self.state(loc)
 
@@ -418,31 +373,6 @@ class Find_Path_and_Follow(object):
         x_y_completezz = [self.add_heading(x_y_completez)]
 
         final_paths_to_follow = x_y_completezz + paths_to_follow              # add the path list to start of paths list of list....see 'list concatenation'
-
-        # print(final_paths_to_follow[0])
-        # print(len(final_paths_to_follow[0]))
-        # print('done')
-        # print(final_paths_to_follow[1])
-        # print(len(final_paths_to_follow[1]))
-        # print('done')
-        # print(final_paths_to_follow[2])
-        # print(len(final_paths_to_follow[2]))
-        # print('done')
-        # print(final_paths_to_follow[3])
-        # print(len(final_paths_to_follow[3]))
-        # print('done')
-        # print(final_paths_to_follow[4])
-        # print(len(final_paths_to_follow[4]))
-        # print('done')
-        # print(final_paths_to_follow[5])
-        # print(len(final_paths_to_follow[5]))
-        # print('done')
-        # print(final_paths_to_follow[6])
-        # print(len(final_paths_to_follow[6]))
-        # print('done')
-        # print(final_paths_to_follow[7])
-        # print(len(final_paths_to_follow[7]))
-
 
         #publish path points
         planned = []
@@ -481,17 +411,8 @@ class Find_Path_and_Follow(object):
         # ax.set_title(title, fontsize=fontsize)
         plt.tick_params(labelsize=fontsize)
         plt.tight_layout()
-        plt.savefig("/home/misan/figs/final_map_paths.png")
+        # plt.savefig("/home/misan/figs/final_map_paths.png")
         # plt.show()
-
-    # #####################################################################################################################################
-    # # Save start pose
-    # #####################################################################################################################################
-    #
-    #     loc = self.est_pose
-    #     pos = self.state(loc)
-    #     start_pose = pos[2]
-    #
     # #######################################################################################################################################
     #
     # #controller loop
@@ -681,48 +602,6 @@ class Find_Path_and_Follow(object):
                 break
         time.sleep(5)
 
-    ##########################################################################################
-    ## TO DO: OUTDOORS here calculate heading to final goal then rotate to it
-    ##########################################################################################
-        #     loc = self.est_pose
-        #     q = self.state(loc)
-
-        # theta = np.arctan2(self.final_goal[1]-q[1], self.final_goal[0]-q[0])
-
-        # CHECK: this is the angular difference, between current and goal position:
-        # add it 'vectorially' (notice atan2 used) to the current angular position to get the final position angle at this instant
-        # OR: Just rotate Husky by this angle in the correct direction (this seems simpler)
-
-        # angle = q[2] + theta
-
-        # So if you know your FIXED goal in GPScoordinates,how do you get the position of the goal in Euclidean (or map) coordinates
-        # i.e. self.final_goal[1], self.final_goal[0] in the theta equation above?
-        # The NavSatTransform node in ROS Localization package will give you the GPS--Map transformation...get it and use it!
-
-        # while True:
-        #     # Build twist message to /cmd_vel
-        #
-        #     loc = self.est_pose
-        #     q = self.state(loc)
-        #     twist = Twist()
-        #     twist.linear.x = 0.0
-        #     twist.angular.z = 0.3
-        #     self.pub_twist.publish(twist)
-        #
-        #     if (angle < 0 and q[2] < 0.98 * angle and q[2] > 1.02 * angle) or (if angle > 0 and q[2] > 0.98 * angle and q[2] < 1.02 * angle):
-        #     if abs(q[2] - angle) < (3.142 / 36):  # i.e if the difference is within 5 deg either way...
-        #
-        #     #trouble if theta is +/-180!!!
-        #
-        #         twist.angular.z = 0.0
-        #         self.pub_twist.publish(twist)
-        #         break
-
-        # time.sleep(2)
-
-        # self.pub_empty.publish()        #start up next cycle...dbscan...
-        # time.sleep(2)  # just in case
-
     ##############################################################################################
         # Plot paths
     #############################################################################################
@@ -784,9 +663,6 @@ class Find_Path_and_Follow(object):
 
             one_global_coord = []
 
-            # U = Path_N[i][1]                # back to pixel coordinates
-            # V = Path_N[i][0]
-
             U = self.scale*Path_N[i][1]                # back to pixel coordinates...if resized to half size
             V = self.scale*Path_N[i][0]
 
@@ -827,10 +703,10 @@ class Find_Path_and_Follow(object):
 
         # Initalization for Feedback Linearization Controller
 
-########################################################################################################################
+    ########################################################################################################################
 
-#controller stuff
-########################################################################################################################
+        #controller stuff
+    ########################################################################################################################
 
     def fbl_init(self):
 
@@ -936,60 +812,6 @@ class Find_Path_and_Follow(object):
 
         return pf_errors
 
-    # Function to find lateral and heading errors with respect to the closest point on path to vehicle
-
-    # Function to find lateral and heading errors with respect to the closest point on path to vehicle
-    def current_path_errors(self, q):
-
-        # Smart path planner - only look at path points from the previous closest point ahead
-        # Array declaration for closest_point_index function
-        # N_pp = len(self.path.poses)
-
-        # Define how many path points we are looking ahead and behind the current closest point.
-        n_a = 20
-        n_b = 10
-        N_pp = n_a + n_b + 1
-        x_dist = np.zeros(N_pp)
-        y_dist = np.zeros(N_pp)
-        self.dist2points = np.zeros(N_pp)
-
-        # Go through path points from previous closest point and find the new closest point to vehicle
-        for j in range(0, N_pp):
-
-            # Additive term to loop counter to count through path points from n_b to n_a
-            k = self.c - n_b
-            # Check that counter and additive term aren't greater than number of path points
-            if k + j >= len(self.path) - 1:
-                k = len(self.path) - 1 - j
-
-            x_dist[j] = np.array((q[0] - (0.01*self.path[j + k][0])))
-            y_dist[j] = np.array((q[1] - (0.01*self.path[j + k][1])))
-            self.dist2points[j] = np.array(np.sqrt(x_dist[j] ** 2 + y_dist[j] ** 2))
-
-        # Find the smallest distance to a point, and find its index,
-        # then add index of previous closest point to make sense in path point array
-
-        self.c = np.argmin(self.dist2points) + (self.c - n_b)           #misan: don't understand'...
-                        # test at start when self.c_fast is zero, and say the argmin is 0, will the target point 'self.c_fast' be -10?
-                        # if so wouldn'tthat be at the other end ofthe array?
-
-
-        # Local variable to represent closest point at current instance
-        targetpoint = self.path[self.c]
-
-        # Heading Error Calculations in radians
-        eh = q[2] - targetpoint[2]
-
-        # Lateral Error Calculation - considering x and y in N-E-S-W global frame to calculate lateral error
-        del_x = q[0] - (.01*targetpoint[0])
-        del_y = q[1] - (.01*targetpoint[1])
-        el = -del_x * np.sin(targetpoint[2]) + del_y * np.cos(targetpoint[2])
-
-        # Summary errors into an array for cleanliness
-        pf_errors = np.array([el, eh])
-
-        return pf_errors
-
     # -------------------------- Path Following Controller Functions --------------------------------
     # Function to calculate steering rate using Feedback Linearization Controller
     def fbl_controller(self, q, e):
@@ -1004,7 +826,6 @@ class Find_Path_and_Follow(object):
         omega_corr = self.omega_sat(omega)
 
         return omega_corr
-
 
     # -------------------------- Sensor Data Handlers --------------------------------
 

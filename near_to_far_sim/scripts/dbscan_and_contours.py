@@ -5,7 +5,6 @@ from std_msgs.msg import Empty, String
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 from near_to_far_sim.msg import Num
-
 import imutils
 import numpy as np
 import cv2
@@ -15,8 +14,8 @@ from scipy import ndimage as ndi
 from skimage import color
 import copy
 
+
 # rostopic pub starter std_msgs/Empty "{}" --once
-#Heshan Poster advice: powerpoint 4 ft by 3 ft...Don't scale, he says
 
 class Dbscan_and_Contours(object):
     def __init__(self):
@@ -33,21 +32,13 @@ class Dbscan_and_Contours(object):
 
         self.features_store = []
 
-        # self.features_store = [[9.96372223, 1.33045149, -1.40226817, 1e1],
-
-
         rospy.Subscriber('starter', Empty, self.commence_prog, queue_size=1)
         rospy.Subscriber('features_store', Num, self.store_features, queue_size=1)
         rospy.Subscriber('realsense/color/image_raw', Image, self.callback, queue_size=1)
 
         self.T = rospy.get_param('~rate', 0.1)
         self.timer = rospy.Timer(rospy.Duration(self.T), self.timer_callback)
-        self.pub = rospy.Publisher('chatter', Num, queue_size=1, latch=True)           #from tutorial: funny...if latch is
-                                                                                # omitted (False) the subsciber misses the first message
-                                                                           # careful though something about it not being copied
-                                                                        # http://wiki.ros.org/rospy/Overview/Publishers%20and%20Subscribers
-                                                                        # copy.deepcopy() the variable before yourself sending? Just in case you need to
-                                                                        # edit it in subsequent lines after publishing?
+        self.pub = rospy.Publisher('chatter', Num, queue_size=1, latch=True)
         self.pub_label_vib = rospy.Publisher('label_no_and_IMU', Num, queue_size=1, latch=True)
 
     def commence_prog(self, data):
@@ -108,7 +99,6 @@ class Dbscan_and_Contours(object):
                 cc = int(np.around(c))
                 rr = int(np.around(r))
                 C[0:5, kk] = [im[rr - 1, cc - 1, 0], im[rr - 1, cc - 1, 1], im[rr - 1, cc - 1, 2], cc - 1, rr - 1]
-                # or C[0:5, kk] = np.concatenate([np.squeeze(im[rr,cc,:])], [cc, rr]) see also hstack and vstack
                 c = c + S
                 kk = kk + 1
 
@@ -125,8 +115,6 @@ class Dbscan_and_Contours(object):
                 cmax = int(min(C[3, kk] + S, cols - 1))
 
                 subim = im[rmin:rmax + 1, cmin:cmax + 1, :]
-
-                # make a copy of subim...confrim why using subim as is gives a huge value in the subim loop in 'dist'
 
                 assert (subim.size > 0), 'subim has a zero dimension at(%d)' % kk
 
@@ -179,12 +167,7 @@ class Dbscan_and_Contours(object):
 
         Np = len(L)
 
-        # Ec = 3.5    #back full
         Ec = 2.3    #webcam
-        # Ec = 1.04   #icra/Lab
-        # Ec = 1.01   #Gordon #many days up toMay 17
-        # Ec = 1.5     #try
-        # Ec = 0.75
 
         regionsC = np.zeros((Np, 1))
 
@@ -193,8 +176,6 @@ class Dbscan_and_Contours(object):
         Nc = 0
 
         Pvisit = np.zeros((Np, 1))
-
-        # check indexing issues as always is 0 equi to 1 ...
 
         for n in range(0, Np):  # starting from 0 gives problems, adjust regionsC, Pvisit, accordingly
 
@@ -228,29 +209,18 @@ class Dbscan_and_Contours(object):
                         else:
                             neighbours.append(neighboursP)
 
-                    # problem with the above line cos neighboursP can be a list, so when appended to neigbours in the next iteration, nb becomes a list, not an integer....
-                    # flatten neighboursP before appending?
-                    # or loop through and append each integer in the list
-                    # see also:https://stackoverflow.com/questions/952914/how-to-make-a-flat-list-out-of-list-of-lists
-
                     if regionsC[nb] == 0:
                         regionsC[nb] = Nc
 
                         Nz = Nc - 1  # this is the current length of the list C
-                        # i.e. append neighbours (nb) to n
                         C[Nz].append(nb)
 
                     ind = ind + 1
 
         lc = np.zeros(l.shape)
 
-        # np.savetxt("regionsC_before", regionsC, delimiter=",")
-
-        # regionsC = regionsC + 1
         for n in range(0, (len(regionsC))):
             lc[l == n + 1] = regionsC[n]
-
-        # np.savetxt("regionsC_after", regionsC, delimiter=",")
 
         # ###################################################################################################
         #
@@ -258,9 +228,6 @@ class Dbscan_and_Contours(object):
         #
         # ###################################################################################################
 
-        # E = 8  #webcam               # keep somewhat lowto keep individual clusters as pure as possible...
-        # E = 6.3        #Lab/icra            # e.g the tire burn marks separate from wood in the rough wood faux terrain...
-                            # test the effect by comparing dbscan labelled image to testcomparison.m labelled image
         E = 10  #Gordon
         cluster_features = []
 
@@ -287,7 +254,6 @@ class Dbscan_and_Contours(object):
         for i in range(0, len(A)):
             for j in range(0, len(A)):
 
-                # for L, use 0.15 for test4.png, else try 0
                 v = np.array((0 * cluster_features[i][0], cluster_features[i][1], cluster_features[i][2])) - \
                     np.array((0 * cluster_features[j][0], cluster_features[j][1], cluster_features[j][2]))
 
@@ -307,11 +273,9 @@ class Dbscan_and_Contours(object):
                     A[z[p]] = 0
 
         for x in range(similar_cluster_indices.count(-1)):
-            similar_cluster_indices.remove(-1)  # ...cos the 'remove' method removes the element one at at time
-            # https://www.includehelp.com/python/remove-all-occurrences-a-given-element-from-the-list.aspx
+            similar_cluster_indices.remove(-1)
 
         D = []
-
 
         for i in range(0, len(similar_cluster_indices)):
             z = similar_cluster_indices[i]
@@ -321,11 +285,7 @@ class Dbscan_and_Contours(object):
 
             for k in range(0, len(z[0])):
                 B.append(C[z[0][k]])
-                # print(C[z[0][k]])
-                # Q.append(len(C[z[0][k]]))
 
-            # flatten out the list of lists before appending to D (see also neighboursP to compare neighbour appending in spdbscan)
-            # https://stackoverflow.com/questions/952914/how-to-make-a-flat-list-out-of-list-of-lists
             B_flat = []
             for sublist in B:
                 for item in sublist:
@@ -340,10 +300,6 @@ class Dbscan_and_Contours(object):
 
             for k in range(0, len(z)):
                 regionsD[z[k]] = i + 1  # start numbering from 1
-                # regionsD[z[k]] = i
-
-        # regionsD = regionsD + 1  # start numbering from 1
-
 
         ld = np.zeros_like(l)
 
@@ -359,14 +315,7 @@ class Dbscan_and_Contours(object):
             # cv2.waitKey(0)
         cv2.destroyAllWindows()
 
-        # lb = (ld).astype(np.uint8)
-        # new_im = Im.fromarray(
-        #     lb)  # https://www.kite.com/python/examples/4887/PIL-convert-between-a-pil-%60image%60-and-a-numpy-%60array%60
-        # new_im.save("lb.png")
-
         super_cluster_features = []
-
-        # np.savetxt("labeled_imaage.csv", ld, delimiter=",")
 
         for i in range(0, len(D)):
 
@@ -386,7 +335,7 @@ class Dbscan_and_Contours(object):
 
         # make it an array... to be reshaped as ID array for ROS message
         super_cluster_features_matrix = np.zeros((len(super_cluster_features), super_cluster_features[0].shape[
-            0]))  # each row covers one setof cluster features
+            0]))  # each row covers one set of cluster features
 
         for i in range(0, super_cluster_features_matrix.shape[0]):
             for j in range(0, super_cluster_features_matrix.shape[1]):
@@ -452,9 +401,9 @@ class Dbscan_and_Contours(object):
 
         print(N)
 
-        visited = np.zeros((N+1,1))     #python is row major so ravel ops are consistent for sparse csr matrix (Am) and
-        list = []                       #visited array  (see A and B below)...just in case the nonzero ravel numbering
-        listNo = -1                     #is diff for row vs column matrices (checked in ndimage_things script doesn't matter, can u PK's)
+        visited = np.zeros((N+1,1))
+        list = []
+        listNo = -1
 
         for n in range (0, N):    #check indexing...fromzero instead?
             # print(visited[n])
@@ -485,9 +434,7 @@ class Dbscan_and_Contours(object):
     ###################################################################################
 
     def renumberregions(self, L):
-        # doesn't appear to work as advertised...i.e to renumber regions sequentially
         nL = L
-        # labels = np.unique(L.flatten())
         labels = np.unique(L.ravel())     #faster?
         N =len(labels)
 
@@ -549,8 +496,6 @@ class Dbscan_and_Contours(object):
             se = se.astype(np.uint8)
             # b - cv2.morphologyEx(b, cv2.MORPH_OPEN, se)
             mask= np.logical_or(mask, (b - cv2.morphologyEx(b, cv2.MORPH_OPEN, se)))
-
-        # open cv's and scikit image transform are inverse of matlab"s so don't use mask inverse as in PK's
 
         edt, inds = ndi.distance_transform_edt(mask, return_indices=True)
 
@@ -624,13 +569,11 @@ class Dbscan_and_Contours(object):
 
         neighbours = []
 
-        ind = np.nonzero(Am[n,:])           #if a vector why is ind 2D?
-        # print(Am[0,:])                      #this ans the above Q...each element is 2D(?), so nonzero returns a 2-tuple
+        ind = np.nonzero(Am[n,:])
         ind = ind[1]
 
         for i in ind:
             # v = np.array((L[i], a[i], b[i])) - np.array((L[n], a[n], b[n]))
-
             # suppress illumination
             v = np.array((0*L[i], a[i], b[i])) - np.array((0*L[n], a[n], b[n]))
 
@@ -644,21 +587,13 @@ class Dbscan_and_Contours(object):
 ############################################################################################
 
     def four_point_transform(self, img):
-        # obtain a consistent order of the points and unpack them
-        # individually
 
-        tl = [298, 489]  # Calibration 05 May 2021 ends 13 May 2021
+        tl = [298, 489]
         tr = [503, 489]
         br = [791, 739]
         bl = [9, 739]
 
         rect = np.array(([tl, tr, br, bl]), dtype="float32")
-
-        # now that we have the dimensions of the new image, construct
-        # the set of destination points to obtain a "birds eye view",
-        # (i.e. top-down view) of the image, again specifying points
-        # in the top-left, top-right, bottom-right, and bottom-left
-        # order
 
         maxWidth = self.size[0]
         maxHeight = self.size[1]
@@ -675,12 +610,8 @@ class Dbscan_and_Contours(object):
 
         store = cv2.cvtColor(warped, cv2.COLOR_RGB2BGR)
 
-        # filename = 'figs/' + str(time.clock())+'.png'
-        # cv2.imwrite(filename, store)                #for the record
-        #
-        cv2.imwrite("/home/misan/figs/transformed_resized_in_use_sim.tiff", store)
+        # cv2.imwrite("/home/misan/figs/transformed_resized_in_use_sim.tiff", store)
 
-        # return the warped image
         return warped
     ############################################################################################################################
 
@@ -708,10 +639,6 @@ class Dbscan_and_Contours(object):
 
             cnt = sorted(cnt, key=cv2.contourArea, reverse=True)[0]
 
-            # test = cv2.contourArea(cnt)
-            #
-            # print("cnt area is {}".format(test))
-
             cnt = np.asarray(cnt, dtype=np.float32)
 
             cnt = np.asarray(cnt, dtype=np.int)
@@ -724,19 +651,14 @@ class Dbscan_and_Contours(object):
                 # TO DO: also check that the number of the class in the box meets a threshold
                 box_area = rect[1][0]*rect[1][1]
                 contour_area = cv2.contourArea(cnt)
-                # print("cnt area is {}".format(contour_area))
-                # print("cnt_box area is {}".format(box_area))
-                # print(contour_area/box_area)
 
                 #check contour solidity meets a theshold...specify the threshold based on noise...e.g grass with leaves in the fall will have more voids in clusters
                 #note tht the contourArea won't work correctly for self intersecting contours...see docs
                 if (contour_area/box_area)>=0.2:   #0.6
                     drivable_sized_clusters.append(1)
-                    # driveable_features_plus_label_no.append([attributes[n-1][0], attributes[n-1][1], attributes[n-1][2], n])
+
                     driveable_features_plus_label_no.append(attributes[n - 1][0:3] + [n])
-                    # or do this outside loop with enumerate(ziP())...see below before 'return' (commented)
-                    # last one is the cluster label which starts from '1', but the corresponding attribute is n-1 as n starts from 1
-                    # i.e. Label 1 has attribute[0]
+
                 else:
                     drivable_sized_clusters.append(0)
             else:
@@ -781,11 +703,6 @@ class Dbscan_and_Contours(object):
                     similar[i, j] = 0
 
             if not np.any(similar[i, :]):
-                # unknown_features_store.append([current_superclusters[j][0], current_superclusters[j][1], current_superclusters[j][2], current_superclusters[j][3], 0])
-                # more like:
-                # current_superclusters[i] = current_superclusters[i][0:4] + [0]
-                # self.features_store.append([current_superclusters[i][0], current_superclusters[i][1], current_superclusters[i][2], 0])
-                # zero is a placeholder for the IMU data to be collected
 
                 unknown_supercluster.append(current_superclusters[i][0:3])                      # a list of lists
                 unknown_supercluster_label.append(np.int(current_superclusters[i][3]))          # just a list
@@ -793,22 +710,9 @@ class Dbscan_and_Contours(object):
                 # and send back here to festures_store here for appending
 
             else:
-                k = np.argmin(dist[i, :])       # cos more than one feature_store cluster might meet the threshold (E), why it needs careful choice
-                # known_features_with_IMU_added.append(current_superclusters[i][0:4] + features_bank[k][3])   #see 'list concatenation'
-                # OR maybe only append the cluster index in current_superclusters i.e. index 3, and the IMU data and send to ASTAR with labelled Image ...
+                k = np.argmin(dist[i, :])
                 label_no_and_vib_data.append([current_superclusters[i][3]] + [features_bank[k][3]])
-                # at ASTAR copy the IMU data to labelled image using masks and any non-driveable label is given an optimistic or pessimistic cost
-                # i.e highest or lowest
-        print("similar is")
-        print(similar)
 
-        print("dist is")
-        print(dist)
-        #FOR LATER
-        # for i in range(0, similar.shape[0]):
-        #     if not np.any(similar[i, :]):
-        #         self.features_store.append([current_superclusters[i][0], current_superclusters[i][1], current_superclusters[i][2], 0] )
-        #         #zero is a placeholder for the IMU data to be collected
         return unknown_supercluster, unknown_supercluster_label, label_no_and_vib_data
 
     ############################################################################################################################
@@ -821,21 +725,12 @@ class Dbscan_and_Contours(object):
         if self.start is False:
             rospy.logwarn_throttle(2.5, "Send empty message to start program...")
             return
-        # elif self.cv_image is None:
-        #     rospy.logwarn_throttle(2.5, "Waiting for Gazebo image...")
-        #     return
+        elif self.cv_image is None:
+            rospy.logwarn_throttle(2.5, "Waiting for Gazebo image...")
+            return
 
         # get transformed top-down view of image
         image = self.four_point_transform(self.cv_image)
-
-        # image = cv2.imread('/home/offroad/figs/transformed_resized_in_use_sim.tiff')
-        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        #get dbscan clusters
-        # subim = self.my_slic(image, np.int(6000/self.scale), 15, 1, 1) #icralab
-        # subim = self.my_slic(image, np.int(3000/self.scale), 30, 1, 1) #webcam
-        # subim = self.my_slic(image, np.int(6000 / self.scale), 50, 1.5, 10)  # Gordon1
-        # subim = self.my_slic(image, 3000, 50, 1.5, 1)      #20/04
 
         subim = self.my_slic(image, 6000/self.scale, 30, 1.5, 1)
 
@@ -845,12 +740,7 @@ class Dbscan_and_Contours(object):
 
         if self.count == 0:
 
-            # self.cluster_attributes = subim[0]
-            # self.labelled = subim[1]
-
             cluster_attributes = np.ravel(subim[0])
-            print(cluster_attributes)
-            print(np.reshape(cluster_attributes, (-1, 3)))  # test 'unravelling' i.e. reshaping
 
             print(subim[1].shape)
             labelled = (np.ravel(subim[1])).astype(np.uint8)
@@ -858,7 +748,6 @@ class Dbscan_and_Contours(object):
             msg = Num()
             msg.labelled = copy.deepcopy(labelled)
             msg.no_IMU_cluster_attributes = copy.deepcopy(cluster_attributes)
-
 
             rospy.loginfo(msg)
             self.pub.publish(msg)

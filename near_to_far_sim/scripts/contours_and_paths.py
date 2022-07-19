@@ -86,12 +86,8 @@ class Contours_and_Paths(object):
 
         # # To get estimate pose and velocity of vehicle from Gazebo_simuator EKF_Localization package
         rospy.Subscriber('odometry/filtered', Odometry, self.handle_estimate, queue_size=1)
-
-
         rospy.Subscriber('cluster_acclns', Num, self.get_vib_data, queue_size=1)           #subscribe to IMU vib data from record_IMU_data.py
-
         self.sub_joy = rospy.Subscriber('husky_b1/joy', Joy, self.handle_joy, queue_size=1)                         # To joystick information for deadman pendant
-
 
         # Topics to that controller is publishing to
         self.pub_driveable = rospy.Publisher('driveable', Int8, queue_size=1, latch=True)           #latch? Number of driveable-sized cluters
@@ -136,21 +132,6 @@ class Contours_and_Paths(object):
         else:
             self.estop = False                      #necessary?
 
-        # #reverse of the above
-        # if self.use_estop is True:
-        #     # Read estop buttons and if they are on (1), then estop is off
-        #     if data.buttons[self.estop_button] == 1:
-        #         self.estop= True
-        #         # self.pub_plotter.publish()    # This should start the plotter by publishing a to the starter topic
-        #     else:
-        #         self.estop = False
-        #         rospy.logwarn_throttle(2.5,"Press A button to stop robot")
-        #     # Publish soft estop param
-        #     self.pub_estop.publish(self.estop)
-        # else:
-        #     self.estop = False                      #necessary?
-
-
     def timer_callback(self, event):
 
         if self.im is None:
@@ -161,20 +142,13 @@ class Contours_and_Paths(object):
             rospy.logwarn_throttle(2.5, "... waiting for pose...")
             return
 
-        # im = cv2.imread('/home/offroad/ld.png', 0)          #gray
         im = copy.deepcopy(self.im)
-
 
         im = np.asarray(im)
         im = im.astype(np.uint8)
-        # print(im)
-
 
         im = np.reshape(im, (np.int(350/self.scale), np.int(200/self.scale)))   # gray     i.e maxheight by maxwidth
         # np.savetxt("all.csv", im, delimiter=",")
-
-        # new_im = Image.fromarray(im)  # https://www.kite.com/python/examples/4887/PIL-convert-between-a-pil-%60image%60-and-a-numpy-%60array%60
-        # new_im.save("ld.png")
 
         print(im.shape)
 
@@ -203,29 +177,15 @@ class Contours_and_Paths(object):
             cnt=np.asarray(cnt, dtype=np.int)
 
             rect = cv2.minAreaRect(cnt)     #(OPENCV image coords i.e. (col, row))
-            print ("rect 1 is")
-            print(rect)
-            # print(len(rect))
-            # print(type(rect))
             box = cv2.boxPoints(rect)
             box = np.int0(box)          #lists box edges for bottom left clockwise...pls recheck
             print(box)
 
 
             # handle the base terrain, it's contour is the full image; or any similar large clusters
-            # if rect[1][0]>0.6*image.shape[1] and rect[1][1]>0.6*image.shape[0]:       #the indexing reflects opencv (column, row: x,y) vs python (conventional (row,column): y,x) shape definitions
-
             # Cover both cases to cover long strips of patches ie:
-            # Large length narrow breadth or large breadth narrow length (See Gordon1.jpg result using check_contours_use.py in myslic.py, the sandy patch/cluster)
+            # Large length narrow breadth or large breadth narrow length
             if (rect[1][0]>0.3*image.shape[1] and rect[1][1]>0.1*image.shape[0]) or (rect[1][0]>0.3*image.shape[1] and rect[1][1]>0.1*image.shape[0]):
-            # if rect[1][0] > 0.3 * image.shape[1] and rect[1][1] > 0.3 * image.shape[0]:
-                # image = image==1
-                # np.savetxt("check_imaage.csv", image, delimiter=",")
-                # test_coords = [[50,400], [100,400], [150,400], [200,400], [50,300], [100,300], [150,300], [200,300],
-                #                [50,200], [100,200], [150,200], [200,200], [50,100], [100,100], [150,100], [200,100],
-                #                [50,50], [100,50], [150,50], [200,50]]      # an evenly-spaced list of test XY coordinates centres;
-                                         # start close to robot then move horizontally and verically...not in image space(?)
-                #                         # doesn't seem to matter if it exceeds image dimensions but still scale as below:
 
                 row = np.arange(1, 0, -0.05)          #i.e. start populating list with centres close to the robot....cos maybe argmax will return the first instance
                 col = np.arange(0, 1, 0.05)
@@ -235,55 +195,33 @@ class Contours_and_Paths(object):
                         test_coords.append([i * image.shape[0], j * image.shape[1]])    #(np is in (row,col))
 
                 test_coords = [[np.int(x) for x in y] for y in test_coords]             # make all integers
-                # print(test_coords)
-                # print(len(test_coords))
+
                 max_test = np.zeros((len(test_coords), 1))
-                # print(max_test.shape)
+
                 half_box_size = np.int(46/self.scale)       #100cm is the size of terrain elements in Gazebo
                 for i in range (0,len(test_coords)):
                     #functionally get the xys based on known centre, appropriate patch size based on size of robot and image scaling...
                     # box size of 46 used here i.e. approx. half same size as faux terrain boxes....
 
-                    #TO DO: define more centres, i.e. closer spacing between centres, and make centres always fit image size (byparameterising?)
-                    #cos it appears to ignore any centre that doesn't fit currently...will not warn you
-
-                    # print(image.shape)
-                    # print((image[(test_coords[i][1] - half_box_size):(test_coords[i][1] + half_box_size), (test_coords[i][0] - half_box_size):(test_coords[i][0] + half_box_size)]).shape)
                     max_test[i] = np.sum(image.copy()[test_coords[i][0]-half_box_size:test_coords[i][0]+half_box_size, test_coords[i][1]-half_box_size:test_coords[i][1]+half_box_size])
                     #numpy slicing so indices reversed
                     #instead of checking all centres, make it stop/break when the ratio of the np.sum/test_area is say 95, if not then continue
-                print(len(max_test))
-                # print(max_test)
 
-                # print('a test test_coords is')
-                # y = 500
-                # print(image.copy()[test_coords[y][1] - half_box_size:test_coords[y][1] + half_box_size,
-                #    test_coords[y][0] - half_box_size:test_coords[y][0] + half_box_size])
+                print(len(max_test))
 
                 x = np.argmax(max_test)
-                # print(test_coords[x])
-                # print(x)
-                # print(max_test[x])
 
                 box = np.array([[test_coords[x][1] - half_box_size, test_coords[x][0] + half_box_size],  # Bottom Left(BL); wrt test_centre: note image axis origin is TL and [col,row] to stay compatible with OPEN CV's rect and box functins that don't go through the 'if condition of this section
                                 [test_coords[x][1] - half_box_size, test_coords[x][0] - half_box_size],  # Top Left(TL)
                                 [test_coords[x][1] + half_box_size, test_coords[x][0] - half_box_size],  # Top Right(TR)
                                 [test_coords[x][1] + half_box_size, test_coords[x][0] + half_box_size]])  # Bottom Right(BR)
 
-                # rect = ((test_coords[x]), (box[2][1]-box[0][1], box[0][0]-box[2][0]), 0)
-                # # i.e ((centreX, centreY), (W, H), angle))
-
                 rect = (([test_coords[x][1], test_coords[x][0]]), (box[2][0] - box[0][0], box[0][1] - box[2][1]), 0)
                 # i.e ((centreX, centreY), (W, H), angle))
 
             # TO DO!....DONE?
-            Area_centrepts.append(rect)         # put a line above this that only appends if size threshold is met
-            boxpts.append(box)                  # but maintain position on array to keep track of class_numbers
-                                                # something like append 0 if size threshold not met...
-            # print(len(Area_centrepts))
-            # print(len(boxpts))
-            #
-            print("rect 2 is")
+            Area_centrepts.append(rect)
+            boxpts.append(box)
             print(rect)
 
             if rect[1][0]>=46/self.scale and rect[1][1]>=46/self.scale:
@@ -292,8 +230,7 @@ class Contours_and_Paths(object):
 
                 box_area = rect[1][0]*rect[1][1]
                 contour_area = cv2.contourArea(cnt)
-                # print("cnt area is {}".format(contour_area))
-                # print("cnt_box area is {}".format(box_area))
+
                 print(contour_area/box_area)
                 if (contour_area/box_area)>=0.5:   #solidity check...0.6 is my current choice, change reasonably
                     drivable_sized_clusters.append(1)
@@ -304,21 +241,6 @@ class Contours_and_Paths(object):
             else:
                 print('no')
                 drivable_sized_clusters.append(0)
-
-            # if rect[1][0]>=23 and rect[1][1]>=23:  # rect[1][0]>=40 and rect[1][1]>=40:
-            #     # make a decison of size cut-off, and change 40 to appropriate number based on robot size (overall width with some allowance)
-            #     drivable_sized_clusters.append(1)
-            # else:
-            #     drivable_sized_clusters.append(0)
-
-            # if rect[1][0]>=40/self.scale and rect[1][1]>=40/self.scale:
-            #     #make a decison of size cut-off, and change 40 to appropriate number based on robot size (overall width with some allowance)
-            #     # TO DO: also check that the number of the class in the box meets a threshold, to weed out empty boxes
-            #     drivable_sized_clusters.append(1)
-            #
-            # else:
-            #     drivable_sized_clusters.append(0)
-
 
             x_y = [] # centres of relevant edges...plus  box centre
 
@@ -420,14 +342,8 @@ class Contours_and_Paths(object):
         # Next pass start and end for each section to Astar and concatenate...
         # i.e Astar[0], coors_for_IMU[0], Astar[], coords_for_IMU[1]... etc
 
-        # Current_Robot_Position = [312,120]                  # parameterise wrt image size
-        # Final_Position = [0,120]                            # parameterise...
-
         Current_Robot_Position = [im.shape[0]-1, np.int(0.5*(im.shape[1]-1)+1)]                  # parameterise wrt image size
         Final_Position = [0, np.int(0.5*(im.shape[1]-1)+1)]                                 #numpy style....(row,col)
-
-        # Current_Robot_Position = [im.shape[0] - 1, np.int(0.4 * (im.shape[1] - 1) + 1)]
-        # Final_Position = [0, np.int(0.4*(im.shape[1]-1)+1)]
 
         start_end_coords = []
 
@@ -477,18 +393,6 @@ class Contours_and_Paths(object):
             ParentX = np.zeros_like(MAP, dtype=np.int16)  # Matrix keeping track of X position of parent
             ParentY = np.zeros_like(MAP, dtype=np.int16)  # Matrix keeping track of Y position of parent
 
-            # for i in range(np.amin(MAP), np.amax(MAP)+1):
-            #     GScore[MAP == i] = 1e3*1e1          # ...= IMU_Cost[i]  i.e. 1e3 a placeholder...
-            #     Link this to the IMU based costs for each super custer
-            # the costs must have been pre-calculated in an array in the same order as the MAP
-            # so just index the values...the costs must be appropriately designed to differ by orders of magnitude
-
-            # GScore[MAP == 1] = 1e2
-            # GScore[MAP == 2] = 1e2
-            # GScore[MAP == 3] = 1e2
-            # GScore[MAP == 4] = 1e5
-            # GScore[MAP == 5] = 1e6
-            # GScore[MAP == 6] = 1e7
 
             if len(self.known_cluster_labels_and_vib) > 0:
                 self.known_cluster_labels_and_vib = np.reshape(self.known_cluster_labels_and_vib, (-1, 2))
@@ -647,34 +551,14 @@ class Contours_and_Paths(object):
             else:
                 continue
 
-
-        # image1 = cv2.imread('/home/offroad/Desktop/get-perspective-transform-example/transformed_resized.png')               #colour image
-        # if self.count == 0:
-        #     image1 = cv2.imread('/home/offroad/Desktop/get-perspective-transform-example/transformed_resized_two_forward.png')
-        #
-        # if self.count == 1:
-        #     image1 = cv2.imread('/home/offroad/Desktop/get-perspective-transform-example/transformed_resized_three_forward.png')
-
         image1 = cv2.imread("/home/misan/figs/transformed_resized_in_use_sim.tiff")
-        #
-        # for x in coordss_for_IMU_no_pose:
-        #     # x = x[::-1]
-        #     for j in range(0, len(x)-1):
-        #         cv2.line(image1, (x[j][1], x[j][0]), (x[j+1][1], x[j+1][0]), (0, 255, 0), 2)
-        #
-        # cv2.imshow("outline", image1)
-        # cv2.waitKey(3000)
-        # cv2.destroyAllWindows()
-
 
         # Add IMU_Paths to AStar Paths in the right order
-
         OptimalPathss = []
         # print(len(OptimalPaths))
 
         OptimalPathss.append(OptimalPaths[0][::-1])
         # first path from start to end....Note: OptimalPaths comes end to start, so flipped [;;-1]
-        # print(len(OptimalPaths))
         del OptimalPaths[0]         #or just use .pop above?
 
         Final_Path = OptimalPaths.pop(-1)
@@ -683,10 +567,6 @@ class Contours_and_Paths(object):
 
         del coordss_for_IMU_no_pose[0]
 
-        # print(len(OptimalPaths))
-        # print(len(coordss_for_IMU_no_pose))
-
-
         for coords_for_IMU_no_pose, OptimalPathsss in zip(coordss_for_IMU_no_pose, OptimalPaths):
 
             OptimalPathss.append(OptimalPathsss[::-1])
@@ -694,12 +574,6 @@ class Contours_and_Paths(object):
 
 
         OptimalPathss.append(Final_Path[::-1])
-
-
-        # image1 = cv2.imread('/home/offroad/Desktop/get-perspective-transform-example/transformed_resized.png')               #colour image
-
-        # image1 = cv2.imread('/home/offroad/Desktop/get-perspective-transform-example/transformed_resized_two_backward.png')
-        # print(image1.shape)
 
         for drivable_sized_cluster, box in zip(drivable_sized_clusters, boxpts):
             if drivable_sized_cluster == 1:
@@ -797,30 +671,6 @@ class Contours_and_Paths(object):
 
     ########################################################################################################################
 
-        # print(final_paths_to_follow[0])
-        # print(len(final_paths_to_follow[0]))
-        # print('done')
-        # print(final_paths_to_follow[1])
-        # print(len(final_paths_to_follow[1]))
-        # print('done')
-        # print(final_paths_to_follow[2])
-        # print(len(final_paths_to_follow[2]))
-        # print('done')
-        # print(final_paths_to_follow[3])
-        # print(len(final_paths_to_follow[3]))
-        # print('done')
-        # print(final_paths_to_follow[4])
-        # print(len(final_paths_to_follow[4]))
-        # print('done')
-        # print(final_paths_to_follow[5])
-        # print(len(final_paths_to_follow[5]))
-        # print('done')
-        # print(final_paths_to_follow[6])
-        # print(len(final_paths_to_follow[6]))
-        # print('done')
-        # print(final_paths_to_follow[-1])
-        # print(len(final_paths_to_follow[-1]))
-
         plt.style.use("ggplot")
         plt.figure()
 
@@ -841,54 +691,9 @@ class Contours_and_Paths(object):
         # ax.set_title(title, fontsize=fontsize)
         plt.tick_params(labelsize=fontsize )
         plt.tight_layout()
-        plt.savefig("/home/misan/figs/{}.tiff".format(time.clock()))
+        # plt.savefig("/home/misan/figs/{}.tiff".format(time.clock()))
         # plt.show()
 
-        #
-        # #check poses
-        # plt.style.use("ggplot")
-        # plt.figure()
-        #
-        # thethas = [i[2]*180/np.pi for i in final_paths_to_follow[3]]
-        #
-        # print("poses are")
-        # print(thethas)
-        #
-        # plt.plot(thethas, '-o', color="black", markeredgecolor="black", label="planned path")
-        #
-        # # plt.title("Final map paths")
-        # fontsize = 26
-        # plt.legend()
-        # plt.xlabel("point", fontsize=fontsize)
-        # plt.ylabel("pose (rad)", fontsize=fontsize)
-        # # ax.set_title(title, fontsize=fontsize)
-        # plt.tick_params(labelsize=fontsize )
-        # plt.tight_layout()
-        # plt.savefig('figs/poses2.png')
-    # #####################################################################################################################################
-    #     # Save start pose
-    # #####################################################################################################################################
-    #
-    # #     loc = self.est_pose
-    # #     pos = self.state(loc)
-    # #     # start_pose = pos[2]
-    # #
-    # #     start_pose = pos[2]+0.09
-    # #
-    # #     print('ok, first path point')
-    # #     print(final_paths_to_follow[0][0])
-    # #     print(final_paths_to_follow[0][1])
-    # #     print(final_paths_to_follow[0][2])
-    # #     print(final_paths_to_follow[0][3])
-    # #     print(final_paths_to_follow[0][4])
-    # #     print('ok, robot position')
-    # #     print(pos)
-    # #
-    # #     # try a loop to pop out the first (and maybe second path-careful robot can't jump, closest path point must be 'close enough')
-    # #     # point if it is negative just to check why map_EKF gives issues sometimes
-    # #     # to check if the closest path point is actually behind the robot -- because at the instant when it wants to start path
-    # #     # folling the map_ekf position might have drifted a bit putting the robot in front of the closest path ptor out of reach due to holonomic
-    # #     # constraints i.e robot cannot jump!
     # # ######################################################################################################################################
     # #controller loop
     # ######################################################################################################################################
@@ -896,14 +701,8 @@ class Contours_and_Paths(object):
         # ... for calculating steering commands
         for i in range(0, len(final_pathz_to_follow)):
             print('newloop')
-            # final_path_to_follow = final_paths_to_follow[i]
-            # self.path = final_path_to_follow
 
             self.path = final_pathz_to_follow[i]
-
-        #             print(i)
-        #             print(len(final_pathz_to_follow)-1)
-        #             print(len(self.path))
 
             # rotate Husky to start pose of path: define variables
             loc = self.est_pose
@@ -978,14 +777,6 @@ class Contours_and_Paths(object):
 
                 # Define velocity of vehicle
                 self.v = self.vel
-                # misan: self.v used in controller...so what's its relationship to self.v_des published to controller?
-                # misan: my answer is that self.vel the absolute velocity in (3D) is used in controller calculations,
-                # it is essentially the same as self.v_des most of the time because self.v_des is what we give Clearpath's controller
-                # through self.pub_twist which publishes to Clearpath's supplied low level controller 'husky/cmd_vel'
-                # for how invidual wheel speeds are calculated in Clearpath's supplied low level controller...
-                # Husky-UGV-User-Manual.pdf: section 3.1....i.e knowing v=self.v and omega = self.omega solve the 2 eqns simultaneously to get
-                # vr (right wheels speed) and vl(left wheels speed)? and the Clearpath controller will calculate and supply
-                # the voltage required to achieve these speeds for each driven wheel...only the front wheels are powered by motors(?)
 
                 # Singularity prevention.
                 # If speed is low, omega is nearing infinity. In this case, we just make it self.v_min
@@ -1145,48 +936,6 @@ class Contours_and_Paths(object):
                 self.pub_twist.publish(twist)
                 break
         time.sleep(5)
-
-    ##########################################################################################
-        ## TO DO: OUTDOORS here calculate heading to final goal then rotate to it
-    ##########################################################################################
-        #     loc = self.est_pose
-        #     q = self.state(loc)
-
-        # theta = np.arctan2(self.final_goal[1]-q[1], self.final_goal[0]-q[0])
-
-        # CHECK: this is the angular difference, between current and goal position:
-        # add it 'vectorially' (notice atan2 used) to the current angular position to get the final position angle at this instant
-        # OR: Just rotate Husky by this angle in the correct direction (this seems simpler)
-
-        # angle = q[2] + theta
-
-        # So if you know your FIXED goal in GPScoordinates,how do you get the position of the goal in Euclidean (or map) coordinates
-        # i.e. self.final_goal[1], self.final_goal[0] in the theta equation above?
-        # The NavSatTransform node in ROS Localization package will give you the GPS--Map transformation...get it and use it!
-
-        # while True:
-        #     # Build twist message to /cmd_vel
-        #
-        #     loc = self.est_pose
-        #     q = self.state(loc)
-        #     twist = Twist()
-        #     twist.linear.x = 0.0
-        #     twist.angular.z = 0.3
-        #     self.pub_twist.publish(twist)
-        #
-        #     if (angle < 0 and q[2] < 0.98 * angle and q[2] > 1.02 * angle) or (if angle > 0 and q[2] > 0.98 * angle and q[2] < 1.02 * angle):
-        #     if abs(q[2] - angle) < (3.142 / 36):  # i.e if the difference is within 5 deg either way...
-        #
-        #     #trouble if theta is +/-180!!!
-        #
-        #         twist.angular.z = 0.0
-        #         self.pub_twist.publish(twist)
-        #         break
-
-        # time.sleep(2)
-
-        # self.pub_empty.publish()        #start up next cycle...dbscan...
-        # time.sleep(2)  # just in case
 
         self.pub_empty.publish()            #re-trigger dbscan_and_contours.py node for next run
         time.sleep(2)                       #just in case
