@@ -1,0 +1,31 @@
+<?xml version="1.0" ?>
+<sdf version="1.4">
+  <model name="bumps">
+    <static>true</static>
+    <link name="link">
+      <pose>0 0 0 0 0 0</pose>
+
+      <collision name="collision">
+        <geometry>
+          <mesh>
+            <uri>model://bumps/meshes/bumps.dae</uri>
+          </mesh>
+        </geometry>
+      </collision>
+
+      <visual name="visual_abcedf">
+        <geometry>
+          <mesh>
+            <uri>model://bumps/meshes/bumps.dae</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <script>
+            <uri>file://media/materials/scripts/gazebo.material</uri>
+            <name>Gazebo/Wood</name>
+          </script>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>
