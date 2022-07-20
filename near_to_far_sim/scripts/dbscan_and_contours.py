@@ -13,6 +13,7 @@ from scipy import sparse
 from scipy import ndimage as ndi
 from skimage import color
 import copy
+import time
 
 
 # rostopic pub starter std_msgs/Empty "{}" --once
@@ -24,7 +25,7 @@ class Dbscan_and_Contours(object):
         self.cluster_attributes = 0
         self.labelled = 0
         self.bridge = CvBridge()
-        self.cv_image = None
+        self.gazebo_image = None
 
         self.scale = 1
 
@@ -38,8 +39,9 @@ class Dbscan_and_Contours(object):
 
         self.T = rospy.get_param('~rate', 0.1)
         self.timer = rospy.Timer(rospy.Duration(self.T), self.timer_callback)
-        self.pub = rospy.Publisher('chatter', Num, queue_size=1, latch=True)
+        self.pub = rospy.Publisher('label_no', Num, queue_size=1, latch=True)
         self.pub_label_vib = rospy.Publisher('label_no_and_IMU', Num, queue_size=1, latch=True)
+        self.transformed_image_pub = rospy.Publisher('trans_image', Image, queue_size=1, latch=True)
 
     def commence_prog(self, data):
         self.start = True
@@ -56,7 +58,7 @@ class Dbscan_and_Contours(object):
             pass
         except Exception as err:
             print (err)
-        self.cv_image = self.bridge.imgmsg_to_cv2(copy.deepcopy(data), "rgb8")
+        self.gazebo_image= self.bridge.imgmsg_to_cv2(copy.deepcopy(data), "rgb8")
 
 
     def my_slic(self, image, k, m, seRadius, nItr):
@@ -607,10 +609,11 @@ class Dbscan_and_Contours(object):
         # compute the perspective transform matrix and then apply it
         M = cv2.getPerspectiveTransform(rect, dst)
         warped = cv2.warpPerspective(img, M, (maxWidth, maxHeight))
+        self.transf_img = cv2.cvtColor(warped, cv2.COLOR_RGB2BGR)
 
-        store = cv2.cvtColor(warped, cv2.COLOR_RGB2BGR)
-
-        # cv2.imwrite("/home/misan/figs/transformed_resized_in_use_sim.tiff", store)
+        cv2.imshow("Image Window", self.transf_img)
+        cv2.waitKey(5)
+        cv2.destroyAllWindows()
 
         return warped
     ############################################################################################################################
@@ -725,12 +728,12 @@ class Dbscan_and_Contours(object):
         if self.start is False:
             rospy.logwarn_throttle(2.5, "Send empty message to start program...")
             return
-        elif self.cv_image is None:
+        elif self.gazebo_image is None:
             rospy.logwarn_throttle(2.5, "Waiting for Gazebo image...")
             return
 
         # get transformed top-down view of image
-        image = self.four_point_transform(self.cv_image)
+        image = self.four_point_transform(self.gazebo_image)
 
         subim = self.my_slic(image, 6000/self.scale, 30, 1.5, 1)
 
@@ -809,8 +812,12 @@ class Dbscan_and_Contours(object):
                 rospy.loginfo(msg)
                 self.pub.publish(msg)  # note the publishing object used...i.e. at least one unknown so go to get contours_and_path to get IMU data
 
-        self.count = self.count + 1
+        try:
+            self.transformed_image_pub.publish(self.bridge.cv2_to_imgmsg(self.transf_img, "bgr8"))
+        except CvBridgeError as e:
+            print(e)
 
+        self.count = self.count + 1
         self.start = False
 
 
