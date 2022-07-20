@@ -1,0 +1,23 @@
+
+
+    material MyGroundPlane/Image
+            {
+              technique
+              {
+                pass
+                {
+                  ambient 1 1 1 1.000000
+                  diffuse 1 1 1 1.000000
+                  specular 0.03 0.03 0.03 1.000000 
+
+                  texture_unit
+                  {
+                        // Relative to the location of the material script
+        		texture ../textures/black_tiles.jpg
+			scale 0.01 0.01
+                  }
+                }
+              }
+            }
+
+

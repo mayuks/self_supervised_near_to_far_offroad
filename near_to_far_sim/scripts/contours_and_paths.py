@@ -10,16 +10,18 @@ import rospy
 from nav_msgs.msg import Path, Odometry
 from geometry_msgs.msg import Pose, PointStamped, PoseStamped, Twist
 from std_msgs.msg import Empty, Bool, Int8, Int16, Float32MultiArray
-from sensor_msgs.msg import Joy
+from sensor_msgs.msg import Joy, Image
 from near_to_far_sim.msg import IMU_trigger, Num
+from cv_bridge import CvBridge, CvBridgeError
 import matplotlib.pyplot as plt
 import time
-from PIL import Image
 
 
 class Contours_and_Paths(object):
     def __init__(self):
         self.im = None
+        self.bridge = CvBridge()
+        self.transf_image = None
         self.unknwon_cluster_color_features = None
         self.known_cluster_labels_and_vib = None
         self.labels_with_unknown_IMU = None
@@ -48,52 +50,30 @@ class Contours_and_Paths(object):
         self.flag = 0
         self.count = 0
 
-        # Initalize options
+        # FBL controller params
+        self.sat_omega_lim = 2      # Saturating steering rate at 2 rad/s
+        # Operating velocities
+        self.v_opt = 0.5
+        self.v_min = 0.25
+        # Controller Gain
+        omegaCL = rospy.get_param('~omega_cl', 0.7)  # Closed-loop bandwidth for FBL controller
+        zeta = rospy.get_param('~zeta', 1.5)  # Damping coeffient
+        self.kp = -omegaCL ** 2  # Proportional gain
+        self.kd = -2 * omegaCL * zeta  # Differential gain
 
-        # Define button that will be used as a deadman switch for path following
-        self.estop_button = 1       # Set Deadman to button [1] which is the 'A' on the Logitech joysticks
-        self.use_estop = rospy.get_param('~use_estop', True)
-        self.estop = False
-
-        # **** Get vehicle and controller parameters ****
-        # Saturating steering rate to be no more than 2 rad/s (115 deg/sec)
-        self.sat_omega_lim = rospy.get_param('~sat_omega_lim', 2)  # misan: find this parameter in launch file
-
-        # Defining velocities for the vehicle (Desired and minimum)
-        self.v_des = rospy.get_param('~const_vel', 0.50)  # [m/s] Desired vehicle speed
-        self.v_min = rospy.get_param('~v_min',
-                                     0.25)  # [m/s] Vehicle speed used in the control law if the vehicle is moving slower than this
-
-        # Define parameter for Path Travelled
-        self.path_traveled = Path()
-        self.poi = PointStamped()
-
-        # Setup to chose the correct controller based on the launch file
-        self.controller_selector = rospy.get_param('~controller_selector', 'fbl')
-        if self.controller_selector == 'fbl':
-            # Call init function to set up fbl gains
-            self.fbl_init()
-
-        else:
-            print('Select proper controller')
-
-
-        self.T = rospy.get_param('~rate', 0.1)
+        self.T = 0.1
         self.timer = rospy.Timer(rospy.Duration(self.T), self.timer_callback)
 
         # Topics that controller is subscribing to
-        rospy.Subscriber('chatter', Num, self.callback, queue_size=1)
-
+        rospy.Subscriber('label_no', Num, self.callback, queue_size=1)
         # # To get estimate pose and velocity of vehicle from Gazebo_simuator EKF_Localization package
-        rospy.Subscriber('odometry/filtered', Odometry, self.handle_estimate, queue_size=1)
+        rospy.Subscriber('odometry/filtered', Odometry, self.get_pose, queue_size=1)
+        self.transf_image_sub = rospy.Subscriber('trans_image', Image, self.transf_image_callback, queue_size=1)
         rospy.Subscriber('cluster_acclns', Num, self.get_vib_data, queue_size=1)           #subscribe to IMU vib data from record_IMU_data.py
-        self.sub_joy = rospy.Subscriber('husky_b1/joy', Joy, self.handle_joy, queue_size=1)                         # To joystick information for deadman pendant
 
         # Topics to that controller is publishing to
         self.pub_driveable = rospy.Publisher('driveable', Int8, queue_size=1, latch=True)           #latch? Number of driveable-sized cluters
-        # self.pub_paths = rospy.Publisher('paths_list', Num, queue_size=1, latch=True)           #latch?
         self.pub_path_points_followed = rospy.Publisher('path_points_followed', Int16, queue_size=1, latch=True)  # latch?
-        self.pub_estop = rospy.Publisher('husky_b1/e_stop', Bool, queue_size=1)                      # Publish to estop topic to put husky in soft estop mode
         self.pub_twist = rospy.Publisher('husky_velocity_controller/cmd_vel', Twist, queue_size=100)                  # Publish to command velocities (v, omega) to the vel controller
         self.pub_IMU_record = rospy.Publisher('get_IMU_data', IMU_trigger, queue_size=1, latch=True)
         self.pub_features_store = rospy.Publisher('features_store', Num, queue_size=1, latch=True)
@@ -104,7 +84,12 @@ class Contours_and_Paths(object):
         self.pub_erry = rospy.Publisher('erry', Num, queue_size=1, latch=True)
         self.pub_planned_paths_1 = rospy.Publisher('planned_paths_1', Num, queue_size=1, latch=True)
 
-
+    def transf_image_callback(self, data):
+        try:
+            pass
+        except Exception as err:
+            print (err)
+        self.transf_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
 
     def callback(self, data):
         self.im = copy.deepcopy(data.labelled)
@@ -112,25 +97,8 @@ class Contours_and_Paths(object):
         self.known_cluster_labels_and_vib = copy.deepcopy(data.cluster_attributes)
         self.labels_with_unknown_IMU = copy.deepcopy(data.no_IMU_cluster_attributes_label)
 
-
     def get_vib_data(self, data):
         self.vib_data = data.cluster_attributes
-
-    # For 'deadman'button...emergency stop
-    def handle_joy(self, data):
-        # Conditional statement to use estop or not...robot will only respond to ontrol signals when button is pressed i.e when 'True'
-        if self.use_estop is True:
-            # Read estop buttons and if they are on (1), then estop is off
-            if data.buttons[self.estop_button] == 1:
-                self.estop= False
-                # self.pub_plotter.publish()    # This should start the plotter by publishing a to the starter topic
-            else:
-                self.estop = True
-                rospy.logwarn_throttle(2.5,"Press A button to engage deadman")
-            # Publish soft estop param
-            self.pub_estop.publish(self.estop)
-        else:
-            self.estop = False                      #necessary?
 
     def timer_callback(self, event):
 
@@ -140,6 +108,10 @@ class Contours_and_Paths(object):
 
         if self.est_pose is None:             # is None....no position data from Vicon or EKF...ceck appropriate topic
             rospy.logwarn_throttle(2.5, "... waiting for pose...")
+            return
+
+        if self.transf_image is None:
+            rospy.logwarn_throttle(2.5, "... waiting for transformed image for visualization...")
             return
 
         im = copy.deepcopy(self.im)
@@ -551,8 +523,6 @@ class Contours_and_Paths(object):
             else:
                 continue
 
-        image1 = cv2.imread("/home/misan/figs/transformed_resized_in_use_sim.tiff")
-
         # Add IMU_Paths to AStar Paths in the right order
         OptimalPathss = []
         # print(len(OptimalPaths))
@@ -577,8 +547,8 @@ class Contours_and_Paths(object):
 
         for drivable_sized_cluster, box in zip(drivable_sized_clusters, boxpts):
             if drivable_sized_cluster == 1:
-                cv2.drawContours(image1, [box], -1, (0, 255, 0), 4)
-                cv2.imshow("outline", image1)
+                cv2.drawContours(self.transf_image, [box], -1, (0, 255, 0), 4)
+                cv2.imshow("outline", self.transf_image)
                 cv2.waitKey(2000)
             else:
                 continue
@@ -587,7 +557,7 @@ class Contours_and_Paths(object):
             if drivable_sized_cluster == 1:
                 for j in range(0, len(coord_for_IMU)-2):                 #-1 is pose
                     #the Paths are in numpy format (row,col), so we flip to plot in CV2 format(col,row)
-                    cv2.line(image1, (coord_for_IMU [j][1], coord_for_IMU [j][0]), (coord_for_IMU [j+1][1], coord_for_IMU [j+1][0]), (255, 0, 0), 2)
+                    cv2.line(self.transf_image, (coord_for_IMU [j][1], coord_for_IMU [j][0]), (coord_for_IMU [j+1][1], coord_for_IMU [j+1][0]), (255, 0, 0), 2)
                 else:
                     continue
 
@@ -596,33 +566,26 @@ class Contours_and_Paths(object):
             for i in range(0, len(Paths)):
                 if i == len(Paths) - 1:
                     continue
-                cv2.line(image1, (Paths[i][1], Paths[i][0]), (Paths[i + 1][1], Paths[i + 1][0]),
+                cv2.line(self.transf_image, (Paths[i][1], Paths[i][0]), (Paths[i + 1][1], Paths[i + 1][0]),
                          (0, 0, 255), 2)
-                cv2.imshow("outline", image1)
+                cv2.imshow("outline", self.transf_image)
                 cv2.waitKey(5)
-        print('stop')
-        cv2.imshow("outline", image1)
+        cv2.imshow("outline", self.transf_image)
         cv2.waitKey(10)
         # cv2.waitKey(0)
         cv2.destroyAllWindows()
 
-        # cv2.imwrite("figs/image_traversal_paths_no_costs.tiff",image1)
-        filename = 'figs/' + str(time.clock())+'.png'
-        cv2.imwrite(filename, image1)                #for the record
+        filename = str(time.clock())+'.png'
+        cv2.imwrite(filename, self.transf_image)                #for the record
 
         image_to_global = [self.to_global(x) for x in OptimalPathss]
-        # print(len(image_to_global))
-        # print(image_to_global[-2][0])
 
         paths_to_follow = [self.add_heading(x) for x in image_to_global]
-
-        # print(len(paths_to_follow))
-        # print(paths_to_follow[-2][0])
 
         # Now add initial path from vehice to start of image
 
         loc = self.est_pose
-        self.robot_pose = self.state(loc)
+        self.robot_pose = self.current_pose(loc)
 
         print('pose is')
         print(self.robot_pose)
@@ -666,9 +629,7 @@ class Contours_and_Paths(object):
         self.pub_planned_paths_1.publish(pub_planned)
 
     ########################################################################################################################
-
         #just some testing and printing stuff
-
     ########################################################################################################################
 
         plt.style.use("ggplot")
@@ -691,7 +652,7 @@ class Contours_and_Paths(object):
         # ax.set_title(title, fontsize=fontsize)
         plt.tick_params(labelsize=fontsize )
         plt.tight_layout()
-        # plt.savefig("/home/misan/figs/{}.tiff".format(time.clock()))
+        # plt.savefig("/figs/{}.tiff".format(time.clock()))
         # plt.show()
 
     # # ######################################################################################################################################
@@ -706,7 +667,7 @@ class Contours_and_Paths(object):
 
             # rotate Husky to start pose of path: define variables
             loc = self.est_pose
-            pos = self.state(loc)
+            pos = self.current_pose(loc)
             robot = pos[2]
             target_pos = self.path[0][2]
             twist = Twist()
@@ -743,7 +704,7 @@ class Contours_and_Paths(object):
             # rotate Husky to start pose of path: rotate to start pose in predetermined shorter direction
             while True:
                 loc = self.est_pose
-                q = self.state(loc)
+                q = self.current_pose(loc)
               #Husky's diff drive controller responds to this value (from using joystick and echoing Husky/cmd_vel topic)...try 0.8
                 self.pub_twist.publish(twist)
 
@@ -788,7 +749,7 @@ class Contours_and_Paths(object):
 
 
                 # Establishing the current state of the unicycle vehicle as (x, y, theta)
-                q = self.state(loc)
+                q = self.current_pose(loc)
 
                 robot_actual = Num()
                 robot_actual.cluster_attributes = q
@@ -797,7 +758,7 @@ class Contours_and_Paths(object):
                 self.actual_path_pts.append(q)
 
                 # Calculate the lateral and heading error of the vehicle where e = [el, eh]
-                e = self.current_path_errors_slow(q)
+                e = self.path_errors(q)
 
                 follow_error = Num()
                 follow_error.cluster_attributes = e
@@ -819,12 +780,12 @@ class Contours_and_Paths(object):
                             IMU_things.start_stop = 'stop'
                             self.pub_IMU_record.publish(IMU_things)
 
-                        v_des = 0.0
+                        v_opt = 0.0
                         self.omega = 0.0
 
                         # Build twist message to /cmd_vel
                         twist = Twist()
-                        twist.linear.x = v_des
+                        twist.linear.x = v_opt
                         twist.angular.z = self.omega
                         self.pub_twist.publish(twist)
 
@@ -839,7 +800,7 @@ class Contours_and_Paths(object):
                         if IMU_things.start_stop == 'start':
                             IMU_things.start_stop = 'stop'
                             self.pub_IMU_record.publish(IMU_things)
-                        # v_des = 0.0
+                        # v_opt = 0.0
                         # self.omega = 0.0
                         rospy.logwarn_throttle(2.5, "At the end of the final path! Stop!")
 
@@ -859,9 +820,9 @@ class Contours_and_Paths(object):
             # ---------------- Publishing Space ---------------
 
                 # Build twist message to /cmd_vel
-                v_des=self.v_des
+                v_opt=self.v_opt
                 twist = Twist()
-                twist.linear.x = v_des
+                twist.linear.x = v_opt
                 twist.angular.z = self.omega
                 self.pub_twist.publish(twist)
 
@@ -920,7 +881,7 @@ class Contours_and_Paths(object):
             # Build twist message to /cmd_vel
 
             loc = self.est_pose
-            q = self.state(loc)
+            q = self.current_pose(loc)
             twist = Twist()
             twist.linear.x = 0.0
             twist.angular.z = 0.4
@@ -972,7 +933,7 @@ class Contours_and_Paths(object):
         # ax.set_title(title, fontsize=fontsize)
         plt.tick_params(labelsize=fontsize)
         plt.tight_layout()
-        plt.savefig("/home/misan/figs/{}.tiff".format(time.clock()))
+        plt.savefig("{}.png".format(time.clock()))
         # plt.show()
 
     # ############################################################################
@@ -986,7 +947,7 @@ class Contours_and_Paths(object):
     def to_global(self, Path_N):          # convert paths from image to global coordinates
 
         loc = self.est_pose
-        self.robot_pose = self.state(loc)
+        self.robot_pose = self.current_pose(loc)
 
         # # global robot pose message from Vicon or  Odom_filtered_map EKF_map (ROS Robot_Localization package) in cm
         X_G_R = self.robot_pose[0]*100
@@ -998,9 +959,6 @@ class Contours_and_Paths(object):
         for i in range(0, len(Path_N)):
 
             one_global_coord = []
-
-            # U = Path_N[i][1]                # back to pixel coordinates
-            # V = Path_N[i][0]
 
             U = self.scale*Path_N[i][1]                # back to pixel coordinates...if resized to half size
             V = self.scale*Path_N[i][0]
@@ -1047,24 +1005,9 @@ class Contours_and_Paths(object):
     #controller stuff
     ########################################################################################################################
 
-    def fbl_init(self):
-
-        # Lookahead Parameters
-        self.enable_lookahead = rospy.get_param('~enable_lookahead',
-                                                False)  # [bool] Set true to get heading from a path point ahead of the vehicle
-        self.path_point_spacing = rospy.get_param('~path_point_spacing', 0.05)  # [m] Spacing between path points
-        self.t_lookahead = rospy.get_param('~t_lookahead',
-                                           0.5)  # [s] Amount of time to look ahead of vehicle when lookahead is enabled
-
-        # Controller Gain Parameters and Calculations
-        omegaCL = rospy.get_param('~omega_cl', 0.7)  # Closed-loop bandwidth for FBL controller
-        zeta = rospy.get_param('~zeta', 1.5)  # Damping coeffient
-        self.kp = -omegaCL ** 2  # Proportional gain
-        self.kd = -2 * omegaCL * zeta  # Differential gain
-
     # -------------------------- Utility Functions --------------------------------
     # Function to calculate yaw angle from quaternion in Pose message
-    def headingcalc(self, pose):
+    def get_yaw(self, pose):
         # Build quaternion from orientation
         quaternion = (
             pose.orientation.x,
@@ -1088,24 +1031,22 @@ class Contours_and_Paths(object):
         return omega_fix
 
     # This function is to build an array of the unicycle vehicle state
-    def state(self, loc):
+    def current_pose(self, loc):
         # The state is [x, y, theta] in [m, m, rad]
-        curr_x = loc.pose.position.x
-        curr_y = loc.pose.position.y
-        curr_theta = self.headingcalc(loc.pose)
-        q = np.array([curr_x, curr_y, curr_theta])
+        x = loc.pose.position.x
+        y = loc.pose.position.y
+        theta = self.get_yaw(loc.pose)
+        q = np.array([x, y, theta])
 
         return q
 
     # Function to find lateral and heading errors with respect to the closest point on path to vehicle
-    def current_path_errors_slow(self, q):
-
-        # Smart path planner - only look at path points from the previous closest point ahead
+    def path_errors(self, q):
         # Array declaration for closest_point_index function
         N_pp = len(self.path)
         x_dist = np.zeros(N_pp)
         y_dist = np.zeros(N_pp)
-        self.dist2points = np.zeros(N_pp, dtype=float)           #why an object instance
+        self.dist2points = np.zeros(N_pp, dtype=float)
 
         # Go through path points from previous closest point and find the new closest point to vehicle
         #... multiply by 0.01 to convert to metres
@@ -1114,27 +1055,19 @@ class Contours_and_Paths(object):
             y_dist[j] = np.array((q[1] - (.01*self.path[j][1])))
             self.dist2points[j] = np.array(np.sqrt(x_dist[j] ** 2 + y_dist[j] ** 2))
 
-        # Find the smallest non-zero distance to a point, and find its index
-        # self.c = np.argmin(self.dist2points[np.nonzero(self.dist2points)])            #Michael's
-
         # misan: above, rather than nonzero which makes the array lose its order(?),
         # try using a mask to set the zero value(s) or threshold value to 'inf',
         # then use: self.c = np.argmin(self.dist2points)
 
         mask = self.dist2points == 0                  # or '= self.dist2points < threshold'
         self.dist2points[mask] = np.inf                # or a very large number
-        # self.c = np.int(np.argmin(self.dist2points))
         self.c = np.argmin(self.dist2points)
 
-
-        # print(self.c)
         # Local variable to represent closest point at current instant
         targetpoint = self.path[self.c]
-
         self.true_path.append(targetpoint)
 
         # Heading Error Calculations
-
         targetpoint_heading = targetpoint[2]  # Heading of the closest point at index c in radians
 
         # Heading error in radians
@@ -1149,9 +1082,9 @@ class Contours_and_Paths(object):
         el = -del_x * np.sin(targetpoint[2]) + del_y * np.cos(targetpoint[2])
 
         # Summary errors into an array for cleanliness
-        pf_errors = np.array([el, eh])
+        tracking_errors = np.array([el, eh])
 
-        return pf_errors
+        return tracking_errors
 
     # -------------------------- Path Following Controller Functions --------------------------------
     # Function to calculate steering rate using Feedback Linearization Controller
@@ -1173,7 +1106,7 @@ class Contours_and_Paths(object):
 
     # Handler #2 - For topic /odometry/filetered_map to get pose and velocities
     # Function to handle position estimate of the Husky from robot_localization
-    def handle_estimate(self, data):
+    def get_pose(self, data):
 
         # Define data from handler as estimate = odometry estimate
         self.estimate = data

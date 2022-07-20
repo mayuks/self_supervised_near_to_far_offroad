@@ -1,0 +1,10 @@
+material wooden/Diffuse {
+    technique {
+        pass {
+            texture_unit {
+                texture plywood.png
+		scale 0.1 0.1
+            }
+        }
+    }
+}
