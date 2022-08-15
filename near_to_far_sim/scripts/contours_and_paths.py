@@ -16,6 +16,7 @@ from cv_bridge import CvBridge, CvBridgeError
 import matplotlib.pyplot as plt
 import time
 
+####Identifies sample sections for each terrain type in image and plans a path through using AStar then follows the path using a controller
 
 class Contours_and_Paths(object):
     def __init__(self):
